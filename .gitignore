@@ -1,0 +1,24 @@
+# Ignore environment variable files
+.env
+
+# Ignore AWS configuration files
+.aws/credentials
+.aws/config
+
+# Ignore temporary files
+*.log
+*.tmp
+
+# Ignore compiled files
+*.class
+*.pyc
+*.pyo
+
+# Ignore IDE/editor specific files
+.vscode/
+.idea/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+

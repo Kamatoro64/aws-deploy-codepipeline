@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  GitHubOwner:
+    Type: String
+    Description: The GitHub repository owner
+  GitHubRepoName:
+    Type: String
+    Description: The GitHub repository name
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: The branch of the GitHub repository
+  GitHubOAuthSecretArn:
+    Type: String
+    Description: The ARN of the GitHub OAuth token stored in AWS Secrets Manager
+  TargetStackName:
+    Type: String
+    Description: The name of the stack to be created or updated by the pipeline
+
+Resources:
+  # S3 Bucket for Artifacts
+  ArtifactsBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-artifacts'
+      AccessControl: Private
+
+  # CodePipeline
+  CustomCodePipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    Properties:
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactsBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: '1'
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                Owner: !Ref GitHubOwner
+                Repo: !Ref GitHubRepoName
+                Branch: !Ref GitHubBranch
+                OAuthToken: !Sub '{{resolve:secretsmanager:${GitHubOAuthSecretArn}:SecretString:GitHubToken}}'
+
+        - Name: Deploy
+          Actions:
+            - Name: CloudFormationDeploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              InputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                RoleArn: !GetAtt PipelineRole.Arn
+                ActionMode: CREATE_UPDATE 
+                StackName: !Ref TargetStackName
+                Capabilities: CAPABILITY_NAMED_IAM
+                TemplatePath: SourceOutput::template.yaml
+
+  # IAM Role for CodePipeline
+  PipelineRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-pipeline-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com  
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess
+        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+        - arn:aws:iam::aws:policy/IAMFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AWSLambda_FullAccess
